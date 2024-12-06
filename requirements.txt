@@ -4,4 +4,4 @@ speechrecognition
 transformers
 torch
 ffmpeg
-pydup
+pydup 
