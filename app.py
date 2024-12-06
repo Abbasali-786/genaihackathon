@@ -6,9 +6,9 @@ from transformers import pipeline
 import time
 
 # Force the model to use CPU
-summarizer = pipeline("summarization", model="facebook/bart-large-cnn", device=-1)  # -1 for CPU
-qa_pipeline = pipeline("question-answering", model="distilbert-base-cased-distilled-squad", device=-1)
-classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli", device=-1)
+summarizer = pipeline("summarization", model="facebook/bart-large-cnn")  # -1 for CPU
+qa_pipeline = pipeline("question-answering", model="distilbert-base-cased-distilled-squad")
+classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
 
 # Function to download audio from YouTube using yt-dlp
 def download_audio(youtube_url, output_path="audio.mp4"):
