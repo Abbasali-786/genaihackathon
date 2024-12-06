@@ -5,10 +5,10 @@ import speech_recognition as sr
 from transformers import pipeline
 import time
 
-# Initialize Hugging Face models for summarization, QA, and classification
-summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
-qa_pipeline = pipeline("question-answering", model="distilbert-base-cased-distilled-squad")
-classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
+# Force the model to use CPU
+summarizer = pipeline("summarization", model="facebook/bart-large-cnn", device=-1)  # -1 for CPU
+qa_pipeline = pipeline("question-answering", model="distilbert-base-cased-distilled-squad", device=-1)
+classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli", device=-1)
 
 # Function to download audio from YouTube using yt-dlp
 def download_audio(youtube_url, output_path="audio.mp4"):
