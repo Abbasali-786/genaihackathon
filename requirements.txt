@@ -2,4 +2,4 @@ streamlit
 requests
 newspaper3k
 groq
-lxml
+lxml[html_clean]
