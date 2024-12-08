@@ -1,126 +1,129 @@
-import streamlit as st
-import yt_dlp
 import os
-import speech_recognition as sr
-from transformers import pipeline
-import time
+import requests
+from datetime import datetime
+from newspaper import Article
+from groq import Groq
 
-# Force the model to use CPU
-summarizer = pipeline("summarization", model="facebook/bart-large-cnn")  # -1 for CPU
-qa_pipeline = pipeline("question-answering", model="distilbert-base-cased-distilled-squad")
-classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
+# Your News API key
+API_KEY = '446dc1fa183e4e859a7fb0daf64a6f2c'
+BASE_URL = 'https://newsapi.org/v2/everything'
 
-# Function to download audio from YouTube using yt-dlp
-def download_audio(youtube_url, output_path="audio.mp4"):
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'extractaudio': True,  # Extract audio
-        'audioquality': 1,     # High audio quality
-        'outtmpl': output_path,  # Output path
-        'quiet': False,        # Show progress
+# Set up Groq client (ensure your API key is correctly set)
+client = Groq(
+    api_key= "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"
+)
+
+# Function to fetch news based on topic
+def get_news_by_topic(topic):
+    params = {
+        'q': topic,  # search query
+        'apiKey': API_KEY,  # API key
+        'language': 'en',  # language of the news articles
+        'sortBy': 'publishedAt',  # sort news by latest
+        'pageSize': 5  # limit to 5 articles (you can adjust this)
     }
 
-    # Download the audio
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([youtube_url])
-    st.success(f"Downloaded audio to {output_path}")
+    # Send GET request to News API
+    response = requests.get(BASE_URL, params=params)
 
-# Function to convert audio (mp4) to text using SpeechRecognition
-def audio_to_text(audio_path):
-    # Use FFmpeg to extract audio from the MP4 file and convert it to PCM WAV format
-    audio_wav_path = "audio.wav"
-    
-    # Convert MP4 to WAV format
-    os.system(f"ffmpeg -i {audio_path} -vn -acodec pcm_s16le -ar 44100 -ac 2 {audio_wav_path}")
-    st.write(f"Audio extracted and converted to: {audio_wav_path}")
-    
-    # Initialize recognizer
-    recognizer = sr.Recognizer()
+    news_list = []  # This will store the news articles
 
-    # Load the audio file
+    if response.status_code == 200:
+        data = response.json()
+
+        if 'articles' in data:
+            # Loop through each article and store the relevant data in the list
+            for article in data['articles']:
+                title = article['title']
+                description = article['description']
+                published_at = article['publishedAt']
+                content = article.get('content', 'No full content available.')
+                url = article['url']
+
+                # Convert the publishedAt timestamp to a more readable format
+                published_at = datetime.strptime(published_at, '%Y-%m-%dT%H:%M:%SZ')
+                formatted_time = published_at.strftime('%Y-%m-%d %H:%M:%S')
+
+                # Create a dictionary with article details
+                article_data = {
+                    'title': title,
+                    'description': description,
+                    'publishedAt': formatted_time,
+                    'content': content,  # Here, full content is either from API or scraped
+                    'url': url
+                }
+
+                # Append the article data to the news_list
+                news_list.append(article_data)
+
+        else:
+            print("No news articles found for this topic.")
+    else:
+        print(f"Failed to fetch news. Status code: {response.status_code}")
+
+    # Return the list of news articles
+    return news_list
+
+# Function to process each article URL using Newspaper3k
+def fetch_full_article_with_newspaper(url):
     try:
-        with sr.AudioFile(audio_wav_path) as source:
-            audio_data = recognizer.record(source)
-        
-        # Use Google's speech recognition API to transcribe
-        retries = 3
-        for _ in range(retries):
-            try:
-                text = recognizer.recognize_google(audio_data)
-                return text
-            except Exception as e:
-                st.warning(f"Error: {str(e)}. Retrying...")
-                time.sleep(2)
-        return "Failed to transcribe after retries."
+        article = Article(url)
+        article.download()
+        article.parse()
+        return article.text  # Return the full content of the article
     except Exception as e:
-        return f"Error in audio loading: {str(e)}"
+        return f"Error occurred during parsing: {str(e)}"
 
-# Function to summarize, generate Q&A, and classify content
-def process_transcript(transcript):
-    if len(transcript.split()) < 10:
-        return "Transcript too short for meaningful analysis."
+# Function to summarize an article using Groq's Llama 3 model
+def summarize_article(article_content):
+    # Construct a prompt for summarization
+    prompt = f"Please summarize the following article:\n\n{article_content}"
 
-    # Summarize Transcript
-    summary = summarizer(transcript, max_length=150, min_length=50, do_sample=False)
-    st.subheader("Summary:")
-    st.write(summary[0]['summary_text'])
+    # Request the model to summarize the article content
+    chat_completion = client.chat.completions.create(
+        messages=[{"role": "user", "content": prompt}],
+        model="llama3-8b-8192",  # Specify the model
+    )
 
-    # Question Answering
-    questions = [
-        "What is the main topic of the video?",
-        "What does the speaker discuss in the video?"
-    ]
+    # Extract the summarized content from the response
+    summary = chat_completion.choices[0].message.content.strip()
+    return summary
+
+# Function to split text into smaller chunks
+def split_text(text, max_length=4000):
+    # Split the text into chunks that are no longer than max_length
+    chunks = []
+    while len(text) > max_length:
+        split_index = text.rfind(' ', 0, max_length)  # Split at a space close to max_length
+        chunks.append(text[:split_index])
+        text = text[split_index:].strip()
+    chunks.append(text)  # Append the final chunk
+    return chunks
+
+# Main execution
+topic = input("Enter the topic you want news for: ")
+news_data = get_news_by_topic(topic)
+
+combined_content = ""  # Variable to hold all article content combined
+
+# Process each article URL and fetch the full content
+for article in news_data:
+    print(f"Processing article: {article['title']}")
+    article_content = fetch_full_article_with_newspaper(article['url'])
     
-    for question in questions:
-        result = qa_pipeline({"context": transcript, "question": question})
-        st.subheader(f"Question: {question}")
-        st.write(f"Answer: {result['answer']}")
+    # Combine the content of each article
+    combined_content += f"\n\n{article['title']}:\n{article_content}"
 
-    # Content Classification
-    labels = ["Entertainment", "Informative"]
-    classification_result = classifier(transcript, candidate_labels=labels)
-    st.subheader("Content Classification:")
-    st.write(f"{classification_result['labels'][0]} with score: {classification_result['scores'][0]}")
+# Split the combined content into smaller chunks if it exceeds the limit
+chunks = split_text(combined_content)
 
-# Streamlit UI - Sidebar Navigation
-st.set_page_config(page_title="YouTube Video Analysis", layout="wide")
+# Summarize each chunk separately and combine the summaries
+final_summary = ""
+for chunk in chunks:
+    print(f"Summarizing a chunk of text...")
+    chunk_summary = summarize_article(chunk)
+    final_summary += chunk_summary + "\n\n"
 
-# Sidebar for navigation
-page = st.sidebar.selectbox("Select a page:", ["Home", "Ask a Question"])
-
-# Home Page: Enter YouTube URL and Analyze
-if page == "Home":
-    st.title("YouTube Video Audio Transcription and Summary")
-
-    youtube_url = st.text_input("Please enter your YouTube video link:")
-    
-    if youtube_url:
-        with st.spinner('Downloading audio...'):
-            download_audio(youtube_url, "audio.mp4")
-        
-        # Convert audio to text (transcript)
-        with st.spinner('Transcribing audio...'):
-            transcript = audio_to_text("audio.mp4")
-        
-        if transcript:
-            st.subheader("Transcript:")
-            st.write(transcript)
-            
-            # Process the transcript (summarization, Q&A, and classification)
-            process_transcript(transcript)
-
-# Q&A Page: Ask a question about the video
-elif page == "Ask a Question":
-    st.title("Ask a Question About Your Video")
-
-    # Get the transcript from the Home page or upload manually
-    transcript = st.text_area("Paste the transcript of the video here:")
-
-    if transcript:
-        question = st.text_input("Enter your question about the video:")
-        
-        if question:
-            # Perform question answering
-            result = qa_pipeline({"context": transcript, "question": question})
-            st.subheader(f"Answer to your question:")
-            st.write(f"Answer: {result['answer']}")
+# Print the final summary
+print(f"\nFinal Summary of all articles on '{topic}':\n")
+print(final_summary)
