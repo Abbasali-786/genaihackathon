@@ -3,3 +3,7 @@ requests
 newspaper3k
 groq
 lxml[html_clean]
+diffusers
+torch
+transformers
+IPython
