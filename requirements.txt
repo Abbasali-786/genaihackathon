@@ -1,6 +1,4 @@
 streamlit
-yt-dlp
-speechrecognition
-transformers
-torch
-ffmpeg
+requests
+newspaper3k
+groq
